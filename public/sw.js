@@ -10,7 +10,7 @@
 //
 // Ao mudar este arquivo de forma relevante, troque a VERSAO: o cache antigo é apagado.
 
-const VERSAO = "questoes-v1";
+const VERSAO = "questoes-v2";
 
 // Arquivos salvos já na instalação, para o app abrir offline desde o início.
 const ARQUIVOS_INICIAIS = [

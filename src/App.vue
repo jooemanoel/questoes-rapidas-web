@@ -64,7 +64,7 @@ onUnmounted(() => {
 <template>
   <main class="pagina">
     <header class="cabecalho">
-      <h1>Questões Rápidas</h1>
+      <h1>Questões</h1>
       <PlacarSessao
         v-if="emSessao"
         :acertos="acertos"

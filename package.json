@@ -1,5 +1,5 @@
 {
-  "name": "questoes-rapidas-web",
+  "name": "questoes-web",
   "version": "1.0.0",
   "private": true,
   "description": "Front-end em Vue.js para responder questões no estilo Cebraspe (Certo/Errado)",
