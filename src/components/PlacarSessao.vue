@@ -3,7 +3,6 @@
 defineProps({
   acertos: { type: Number, required: true },
   erros: { type: Number, required: true },
-  notaLiquida: { type: Number, required: true },
 });
 </script>
 
@@ -16,10 +15,6 @@ defineProps({
     <div>
       <dt>Erros</dt>
       <dd class="errado">{{ erros }}</dd>
-    </div>
-    <div title="Acertos menos erros, como no Cebraspe">
-      <dt>Nota líquida</dt>
-      <dd>{{ notaLiquida }}</dd>
     </div>
   </dl>
 </template>

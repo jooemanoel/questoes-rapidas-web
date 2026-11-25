@@ -1,14 +1,28 @@
 <script setup>
 // Mostra a questão e os botões Certo/Errado.
 // Não corrige nada: apenas emite o evento "responder" com a opção escolhida.
-defineProps({
+import { computed } from "vue";
+
+const props = defineProps({
   questao: { type: Object, required: true },
   topico: { type: Object, default: null },
+  // Histórico desta questão antes da resposta atual: { vezes, acertos, ultima } ou null
+  historico: { type: Object, default: null },
   respostaDada: { type: String, default: null },
   bloqueada: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["responder"]);
+
+/** Ex.: "Você já respondeu esta questão 2 vezes (1 acerto), a última em 20/11/2026." */
+const avisoJaRespondida = computed(() => {
+  const h = props.historico;
+  if (!h?.vezes) return "";
+  const vezes = h.vezes === 1 ? "1 vez" : `${h.vezes} vezes`;
+  const acertos = h.acertos === 1 ? "1 acerto" : `${h.acertos} acertos`;
+  const data = h.ultima ? `, a última em ${new Date(h.ultima).toLocaleDateString("pt-BR")}` : "";
+  return `Você já respondeu esta questão ${vezes} (${acertos})${data}.`;
+});
 </script>
 
 <template>
@@ -17,6 +31,8 @@ const emit = defineEmits(["responder"]);
       <span v-if="topico.disciplina">{{ topico.disciplina }} › </span>
       <strong>{{ topico.id }}</strong> {{ topico.titulo }}
     </p>
+
+    <p v-if="avisoJaRespondida" class="ja-respondida">{{ avisoJaRespondida }}</p>
 
     <p v-if="!questao.revisada" class="nao-revisada">
       Questão gerada por IA, ainda não revisada. Confira a base citada no comentário.

@@ -97,6 +97,14 @@ body { margin: 0; }
   padding-left: 8px;
 }
 
+.ja-respondida {
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+  border-left: 3px solid var(--borda);
+  padding-left: 8px;
+}
+
 .enunciado { font-size: 1.1rem; margin: 0 0 20px; white-space: pre-line; }
 
 .opcoes { display: flex; gap: 12px; }

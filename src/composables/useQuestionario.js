@@ -37,6 +37,14 @@ export function useQuestionario() {
   // Questões já respondidas neste navegador: { id: { vezes, acertos, ultima } }
   const historico = ref(lerHistorico());
 
+  // Quantas questões da sessão já tinham sido respondidas quando ela começou.
+  const respondidasNaSessao = ref(0);
+
+  // Histórico da questão atual como estava ANTES de respondê-la agora
+  // (null = nunca respondida). É guardado ao exibir a questão, para que a
+  // resposta dada nesta sessão não altere o aviso.
+  const historicoQuestaoAtual = ref(null);
+
   // ---------- Valores derivados (computed) ----------
   const questaoAtual = computed(() => questoes.value[indiceAtual.value]);
 
@@ -47,9 +55,6 @@ export function useQuestionario() {
   const ehUltimaQuestao = computed(
     () => indiceAtual.value === questoes.value.length - 1
   );
-
-  // No Cebraspe, cada erro anula um acerto.
-  const notaLiquida = computed(() => acertos.value - erros.value);
 
   /** Quantas das questões existentes já foram respondidas ao menos uma vez. */
   const totalRespondidas = computed(
@@ -130,7 +135,9 @@ export function useQuestionario() {
       todasQuestoes.value.filter((q) => pertenceAo(q, idTopico)),
       historico.value
     );
+    respondidasNaSessao.value = questoes.value.filter((q) => historico.value[q.id]).length;
     reiniciarPlacar();
+    lembrarHistoricoDaQuestao();
     etapa.value = questoes.value.length > 0 ? "respondendo" : "vazio";
   }
 
@@ -156,6 +163,7 @@ export function useQuestionario() {
 
     indiceAtual.value++;
     respostaDada.value = null;
+    lembrarHistoricoDaQuestao();
     etapa.value = "respondendo";
   }
 
@@ -179,6 +187,11 @@ export function useQuestionario() {
     respostaDada.value = null;
     acertos.value = 0;
     erros.value = 0;
+  }
+
+  function lembrarHistoricoDaQuestao() {
+    const id = questaoAtual.value?.id;
+    historicoQuestaoAtual.value = (id && historico.value[id]) || null;
   }
 
   // ---------- Funções auxiliares ----------
@@ -207,8 +220,9 @@ export function useQuestionario() {
     ehUltimaQuestao,
     acertos,
     erros,
-    notaLiquida,
     totalRespondidas,
+    respondidasNaSessao,
+    historicoQuestaoAtual,
     topicoAtual,
     opcoesDeEstudo,
     rotuloFiltro,

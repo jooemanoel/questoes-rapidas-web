@@ -19,8 +19,9 @@ const {
   ehUltimaQuestao,
   acertos,
   erros,
-  notaLiquida,
   totalRespondidas,
+  respondidasNaSessao,
+  historicoQuestaoAtual,
   topicoAtual,
   opcoesDeEstudo,
   rotuloFiltro,
@@ -69,7 +70,6 @@ onUnmounted(() => {
         v-if="emSessao"
         :acertos="acertos"
         :erros="erros"
-        :nota-liquida="notaLiquida"
       />
     </header>
 
@@ -109,9 +109,19 @@ onUnmounted(() => {
         </button>
       </div>
 
+      <p v-if="respondidasNaSessao > 0" class="detalhe historico">
+        Você já respondeu {{ respondidasNaSessao }} de {{ questoes.length }} questões.
+        {{
+          respondidasNaSessao < questoes.length
+            ? "As ainda não respondidas aparecem primeiro."
+            : "As respondidas menos vezes aparecem primeiro."
+        }}
+      </p>
+
       <QuestaoItem
         :questao="questaoAtual"
         :topico="topicoAtual"
+        :historico="historicoQuestaoAtual"
         :resposta-dada="respostaDada"
         :bloqueada="etapa === 'corrigida'"
         @responder="responder"
@@ -132,7 +142,7 @@ onUnmounted(() => {
       <p class="detalhe">{{ rotuloFiltro }}</p>
       <p>
         Você respondeu {{ questoes.length }} questões:
-        {{ acertos }} acertos e {{ erros }} erros (nota líquida {{ notaLiquida }}).
+        {{ acertos }} acertos e {{ erros }} erros.
       </p>
       <div class="acoes">
         <button type="button" class="botao-principal" @click="recomecar">Recomeçar</button>
