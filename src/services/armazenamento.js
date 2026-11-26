@@ -13,11 +13,14 @@ export function lerLocal(chave) {
   }
 }
 
+/** Devolve true se gravou. */
 export function gravarLocal(chave, valor) {
   try {
     localStorage.setItem(PREFIXO + chave, JSON.stringify(valor));
+    return true;
   } catch (erro) {
     console.warn(`Não foi possível salvar "${chave}" no navegador:`, erro);
+    return false;
   }
 }
 

@@ -3,39 +3,51 @@
 // quem decide o que acontece em seguida é este arquivo.
 
 import { ref, computed } from "vue";
-import { carregarQuestoes, buscarConteudo } from "../services/api.js";
-import { lerHistorico, registrarResposta, limparHistorico } from "../services/historico.js";
+import { buscarConcursos, carregarQuestoes, buscarConteudo } from "../services/api.js";
+import { lerLocal, gravarLocal } from "../services/armazenamento.js";
+import {
+  lerHistorico,
+  registrarResposta,
+  limparHistorico,
+  migrarDadosAntigos,
+} from "../services/historico.js";
+
+const CHAVE_CONCURSO = "concurso-atual";
 
 /**
  * A tela está sempre em UMA destas etapas:
- *   "carregando"  -> buscando dados na API
- *   "erro"        -> a busca falhou
- *   "escolhendo"  -> tela inicial: escolha da disciplina
- *   "vazio"       -> a disciplina escolhida não tem questões
- *   "respondendo" -> questão na tela, aguardando Certo/Errado
- *   "corrigida"   -> resposta dada, crítica visível
- *   "fim"         -> todas as questões da sessão respondidas
+ *   "carregando"           -> buscando dados na API
+ *   "erro"                 -> a busca falhou
+ *   "escolhendo-concurso"  -> escolha do concurso (só quando há mais de um)
+ *   "escolhendo"           -> tela inicial do concurso: escolha da disciplina
+ *   "vazio"                -> a disciplina escolhida não tem questões
+ *   "respondendo"          -> questão na tela, aguardando a resposta
+ *   "corrigida"            -> resposta dada, crítica visível
+ *   "fim"                  -> todas as questões da sessão respondidas
  */
 export function useQuestionario() {
   // ---------- Estado ----------
   const etapa = ref("carregando");
   const mensagemErro = ref("");
 
-  const todasQuestoes = ref([]); // tudo o que veio da API
+  const concursos = ref([]); // catálogo da API
+  const concurso = ref(null); // concurso em estudo: { id, nome, formato, distribuicao, ... }
+
+  const todasQuestoes = ref([]); // todas as questões do concurso
   const questoes = ref([]); // só as da disciplina escolhida, embaralhadas
   const filtroAtual = ref(null); // id do tópico escolhido (null = todas)
 
   const indiceAtual = ref(0);
-  const respostaDada = ref(null); // "C", "E" ou null
+  const respostaDada = ref(null); // "C"/"E", uma letra da alternativa ou null
 
   const acertos = ref(0);
   const erros = ref(0);
 
-  const topicos = ref([]); // lista plana do conteudo.json
+  const topicos = ref([]); // lista plana do conteudo.json do concurso
   const topicosPorId = ref(new Map());
 
-  // Questões já respondidas neste navegador: { id: { vezes, acertos, ultima } }
-  const historico = ref(lerHistorico());
+  // Questões do concurso já respondidas neste navegador: { id: { vezes, acertos, ultima } }
+  const historico = ref({});
 
   // Quantas questões da sessão já tinham sido respondidas quando ela começou.
   const respondidasNaSessao = ref(0);
@@ -44,6 +56,10 @@ export function useQuestionario() {
   // (null = nunca respondida). É guardado ao exibir a questão, para que a
   // resposta dada nesta sessão não altere o aviso.
   const historicoQuestaoAtual = ref(null);
+
+  // Cada abertura de concurso recebe um número; uma resposta da API que chegue
+  // depois de o usuário trocar de concurso é ignorada.
+  let carregamentoAtual = 0;
 
   // ---------- Valores derivados (computed) ----------
   const questaoAtual = computed(() => questoes.value[indiceAtual.value]);
@@ -56,6 +72,8 @@ export function useQuestionario() {
     () => indiceAtual.value === questoes.value.length - 1
   );
 
+  const podeTrocarConcurso = computed(() => concursos.value.length > 1);
+
   /** Quantas das questões existentes já foram respondidas ao menos uma vez. */
   const totalRespondidas = computed(
     () => todasQuestoes.value.filter((q) => historico.value[q.id]).length
@@ -66,8 +84,9 @@ export function useQuestionario() {
    * disciplinas (nível 2) e a quantidade de questões de cada um.
    * Itens sem nenhuma questão não aparecem.
    */
-  const opcoesDeEstudo = computed(() =>
-    topicos.value
+  const opcoesDeEstudo = computed(() => {
+    const naProva = concurso.value?.distribuicao || {};
+    return topicos.value
       .filter((t) => t.nivel === 1)
       .map((grupo) => ({
         id: grupo.id,
@@ -75,11 +94,11 @@ export function useQuestionario() {
         total: contarQuestoes(grupo.id),
         disciplinas: topicos.value
           .filter((t) => t.parentId === grupo.id)
-          .map((d) => ({ id: d.id, titulo: d.titulo, total: contarQuestoes(d.id) }))
+          .map((d) => ({ id: d.id, titulo: d.titulo, total: contarQuestoes(d.id), naProva: naProva[d.id] ?? null }))
           .filter((d) => d.total > 0),
       }))
-      .filter((grupo) => grupo.total > 0)
-  );
+      .filter((grupo) => grupo.total > 0);
+  });
 
   /** Nome do filtro em uso, exibido durante a sessão. */
   const rotuloFiltro = computed(() => {
@@ -105,26 +124,57 @@ export function useQuestionario() {
   });
 
   // ---------- Ações ----------
+
+  /** Busca o catálogo e abre o último concurso estudado (ou pede para escolher). */
   async function carregar() {
     etapa.value = "carregando";
     mensagemErro.value = "";
+    migrarDadosAntigos();
+
+    try {
+      concursos.value = await buscarConcursos();
+    } catch (erro) {
+      mostrarErro(erro);
+      return;
+    }
+
+    const salvo = lerLocal(CHAVE_CONCURSO);
+    const escolhido =
+      concursos.value.find((c) => c.id === salvo) ??
+      (concursos.value.length === 1 ? concursos.value[0] : null);
+
+    if (escolhido) await abrirConcurso(escolhido.id);
+    else etapa.value = "escolhendo-concurso";
+  }
+
+  /** Carrega as questões e o conteúdo do concurso e vai para a escolha da disciplina. */
+  async function abrirConcurso(idConcurso) {
+    const escolhido = concursos.value.find((c) => c.id === idConcurso);
+    if (!escolhido) return;
+
+    const meuCarregamento = ++carregamentoAtual;
+    etapa.value = "carregando";
+    mensagemErro.value = "";
+    concurso.value = escolhido;
+    gravarLocal(CHAVE_CONCURSO, escolhido.id);
 
     try {
       // As duas buscas são independentes, então rodam em paralelo.
       const [{ questoes: listaQuestoes }, conteudo] = await Promise.all([
-        carregarQuestoes(), // usa a cópia do navegador se a lista não mudou
-        buscarConteudo(),
+        carregarQuestoes(escolhido), // usa a cópia do navegador se a lista não mudou
+        buscarConteudo(escolhido.id),
       ]);
+      if (meuCarregamento !== carregamentoAtual) return;
 
       topicos.value = conteudo;
       topicosPorId.value = new Map(conteudo.map((t) => [t.id, t]));
       todasQuestoes.value = listaQuestoes;
-      historico.value = lerHistorico();
+      historico.value = lerHistorico(escolhido.id);
+      filtroAtual.value = null;
 
       etapa.value = "escolhendo";
     } catch (erro) {
-      mensagemErro.value = erro.message;
-      etapa.value = "erro";
+      if (meuCarregamento === carregamentoAtual) mostrarErro(erro);
     }
   }
 
@@ -148,7 +198,12 @@ export function useQuestionario() {
     if (acertou.value) acertos.value++;
     else erros.value++;
 
-    historico.value = registrarResposta(historico.value, questaoAtual.value.id, acertou.value);
+    historico.value = registrarResposta(
+      concurso.value.id,
+      historico.value,
+      questaoAtual.value.id,
+      acertou.value
+    );
 
     etapa.value = "corrigida";
   }
@@ -172,14 +227,24 @@ export function useQuestionario() {
     iniciar(filtroAtual.value);
   }
 
-  /** Volta para a tela inicial de escolha. */
+  /** Volta para a tela inicial de escolha da disciplina. */
   function trocarDisciplina() {
     etapa.value = "escolhendo";
   }
 
-  /** Esquece quais questões já foram respondidas neste navegador. */
+  /** Volta para a escolha do concurso. */
+  function trocarConcurso() {
+    if (podeTrocarConcurso.value) etapa.value = "escolhendo-concurso";
+  }
+
+  /** Esquece quais questões do concurso já foram respondidas neste navegador. */
   function apagarHistorico() {
-    historico.value = limparHistorico();
+    historico.value = limparHistorico(concurso.value.id);
+  }
+
+  function mostrarErro(erro) {
+    mensagemErro.value = erro.message;
+    etapa.value = "erro";
   }
 
   function reiniciarPlacar() {
@@ -211,6 +276,9 @@ export function useQuestionario() {
   return {
     etapa,
     mensagemErro,
+    concursos,
+    concurso,
+    podeTrocarConcurso,
     todasQuestoes,
     questoes,
     indiceAtual,
@@ -227,11 +295,13 @@ export function useQuestionario() {
     opcoesDeEstudo,
     rotuloFiltro,
     carregar,
+    abrirConcurso,
     iniciar,
     responder,
     proxima,
     recomecar,
     trocarDisciplina,
+    trocarConcurso,
     apagarHistorico,
   };
 }

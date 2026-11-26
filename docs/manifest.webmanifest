@@ -1,7 +1,7 @@
 {
   "name": "Questões",
   "short_name": "Questões",
-  "description": "Questões de Certo ou Errado no estilo Cebraspe para estudar para o concurso.",
+  "description": "Questões para estudar para concursos: Certo ou Errado e múltipla escolha.",
   "lang": "pt-BR",
   "start_url": "./",
   "scope": "./",

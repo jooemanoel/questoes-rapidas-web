@@ -50,6 +50,7 @@ body { margin: 0; }
   margin-bottom: 20px;
 }
 .cabecalho h1 { margin: 0; font-size: 1.4rem; }
+.cabecalho .nome-concurso { margin: 2px 0 0; }
 
 /* ---------- Placar ---------- */
 .placar { display: flex; gap: 20px; margin: 0; }
@@ -108,6 +109,41 @@ body { margin: 0; }
 .enunciado { font-size: 1.1rem; margin: 0 0 20px; white-space: pre-line; }
 
 .opcoes { display: flex; gap: 12px; }
+
+/* Múltipla escolha: uma alternativa por linha, com a letra numa bolinha */
+.alternativas { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+
+.alternativa {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+  border: 2px solid var(--borda);
+  background: var(--superficie);
+  color: var(--texto);
+}
+.alternativa:not(:disabled):hover { border-color: var(--destaque); }
+.alternativa .letra {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8em;
+  height: 1.8em;
+  border-radius: 50%;
+  border: 1px solid var(--borda);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.alternativa .texto { padding-top: 0.1em; }
+.alternativa.escolhida { border-color: var(--destaque); }
+.alternativa.correta { border-color: var(--certo); background: var(--certo-fundo); }
+.alternativa.correta .letra { border-color: var(--certo); color: var(--certo); }
+.alternativa.incorreta { border-color: var(--errado); background: var(--errado-fundo); }
+.alternativa.incorreta .letra { border-color: var(--errado); color: var(--errado); }
+.alternativa:disabled:not(.correta):not(.incorreta) { opacity: 0.6; }
 
 /* ---------- Botões ---------- */
 button {
@@ -180,6 +216,27 @@ kbd {
 .opcao-estudo.todas,
 .opcao-estudo.grupo-titulo { font-weight: 700; }
 .opcao-estudo.todas { border-color: var(--destaque); }
+
+.na-prova {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+/* ---------- Escolha do concurso ---------- */
+.titulo-escolha {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 12px;
+}
+.titulo-escolha h2 { margin: 0; }
+
+.opcao-concurso { padding: 14px 16px; }
+.opcao-concurso .detalhe { display: block; margin-top: 2px; }
+.opcao-concurso.atual { border-color: var(--destaque); }
 
 .contagem {
   flex-shrink: 0;

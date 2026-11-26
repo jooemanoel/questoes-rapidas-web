@@ -2,6 +2,8 @@
 // Componente raiz: liga o estado (composable) aos componentes de tela.
 import { computed, onMounted, onUnmounted } from "vue";
 import { useQuestionario } from "./composables/useQuestionario.js";
+import { letra } from "./services/api.js";
+import EscolhaConcurso from "./components/EscolhaConcurso.vue";
 import EscolhaDisciplina from "./components/EscolhaDisciplina.vue";
 import PlacarSessao from "./components/PlacarSessao.vue";
 import QuestaoItem from "./components/QuestaoItem.vue";
@@ -10,6 +12,9 @@ import CriticaQuestao from "./components/CriticaQuestao.vue";
 const {
   etapa,
   mensagemErro,
+  concursos,
+  concurso,
+  podeTrocarConcurso,
   todasQuestoes,
   questoes,
   indiceAtual,
@@ -26,11 +31,13 @@ const {
   opcoesDeEstudo,
   rotuloFiltro,
   carregar,
+  abrirConcurso,
   iniciar,
   responder,
   proxima,
   recomecar,
   trocarDisciplina,
+  trocarConcurso,
   apagarHistorico,
 } = useQuestionario();
 
@@ -39,13 +46,20 @@ const emSessao = computed(() =>
   ["respondendo", "corrigida", "fim"].includes(etapa.value)
 );
 
-// Atalhos de teclado: C = Certo, E = Errado, Enter = próxima.
+const multiplaEscolha = computed(() => (questaoAtual.value?.alternativas?.length ?? 0) > 0);
+
+// Atalhos de teclado: C = Certo e E = Errado (ou A, B, C... = alternativa), Enter = próxima.
 function aoPressionarTecla(evento) {
+  if (evento.ctrlKey || evento.metaKey || evento.altKey) return; // não atrapalha atalhos do navegador
   const tecla = evento.key.toLowerCase();
 
-  if (etapa.value === "respondendo" && tecla === "c") responder("C");
-  else if (etapa.value === "respondendo" && tecla === "e") responder("E");
-  else if (etapa.value === "corrigida" && tecla === "enter") {
+  if (etapa.value === "respondendo") {
+    if (multiplaEscolha.value) {
+      const indice = tecla.length === 1 ? tecla.charCodeAt(0) - 97 : -1; // "a" = 0
+      if (indice >= 0 && indice < questaoAtual.value.alternativas.length) responder(letra(indice));
+    } else if (tecla === "c") responder("C");
+    else if (tecla === "e") responder("E");
+  } else if (etapa.value === "corrigida" && tecla === "enter") {
     evento.preventDefault(); // evita "clicar" de novo no botão em foco
     proxima();
   }
@@ -65,7 +79,12 @@ onUnmounted(() => {
 <template>
   <main class="pagina">
     <header class="cabecalho">
-      <h1>Questões</h1>
+      <div>
+        <h1>Questões</h1>
+        <p v-if="concurso && etapa !== 'escolhendo-concurso'" class="detalhe nome-concurso">
+          {{ concurso.nome }}
+        </p>
+      </div>
       <PlacarSessao
         v-if="emSessao"
         :acertos="acertos"
@@ -80,16 +99,35 @@ onUnmounted(() => {
     <section v-else-if="etapa === 'erro'" class="aviso erro">
       <p>Não foi possível carregar as questões.</p>
       <p class="detalhe">{{ mensagemErro }}</p>
-      <button type="button" class="botao-principal" @click="carregar">Tentar de novo</button>
+      <div class="acoes">
+        <button type="button" class="botao-principal" @click="carregar">Tentar de novo</button>
+        <button
+          v-if="podeTrocarConcurso"
+          type="button"
+          class="botao-secundario"
+          @click="trocarConcurso"
+        >
+          Trocar concurso
+        </button>
+      </div>
     </section>
+
+    <EscolhaConcurso
+      v-else-if="etapa === 'escolhendo-concurso'"
+      :concursos="concursos"
+      :id-atual="concurso?.id ?? null"
+      @escolher="abrirConcurso"
+    />
 
     <EscolhaDisciplina
       v-else-if="etapa === 'escolhendo'"
+      :pode-trocar-concurso="podeTrocarConcurso"
       :grupos="opcoesDeEstudo"
       :total-geral="todasQuestoes.length"
       :total-respondidas="totalRespondidas"
       @escolher="iniciar"
       @apagar-historico="apagarHistorico"
+      @trocar-concurso="trocarConcurso"
     />
 
     <section v-else-if="etapa === 'vazio'" class="aviso">
@@ -131,6 +169,7 @@ onUnmounted(() => {
         v-if="etapa === 'corrigida'"
         :acertou="acertou"
         :gabarito="questaoAtual.gabarito"
+        :multipla-escolha="multiplaEscolha"
         :comentario="questaoAtual.comentario"
         :eh-ultima-questao="ehUltimaQuestao"
         @proxima="proxima"

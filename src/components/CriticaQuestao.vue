@@ -4,16 +4,19 @@ import { computed } from "vue";
 // Mostra o resultado da resposta e a crítica (comentário) da questão.
 const props = defineProps({
   acertou: { type: Boolean, required: true },
-  gabarito: { type: String, required: true }, // "C" ou "E"
+  gabarito: { type: String, required: true }, // "C"/"E" ou a letra da alternativa
+  multiplaEscolha: { type: Boolean, default: false },
   comentario: { type: String, default: "" },
   ehUltimaQuestao: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["proxima"]);
 
-const gabaritoPorExtenso = computed(() =>
-  props.gabarito === "C" ? "Certo" : "Errado"
-);
+// Na múltipla escolha, "C" é a alternativa C, não "Certo".
+const gabaritoPorExtenso = computed(() => {
+  if (props.multiplaEscolha) return `alternativa ${props.gabarito}`;
+  return props.gabarito === "C" ? "Certo" : "Errado";
+});
 </script>
 
 <template>

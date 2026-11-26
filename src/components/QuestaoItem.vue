@@ -1,7 +1,9 @@
 <script setup>
-// Mostra a questão e os botões Certo/Errado.
-// Não corrige nada: apenas emite o evento "responder" com a opção escolhida.
+// Mostra a questão e os botões de resposta: Certo/Errado ou, na múltipla escolha,
+// uma alternativa por botão. Não corrige nada: apenas emite o evento "responder"
+// com a opção escolhida ("C"/"E" ou a letra da alternativa).
 import { computed } from "vue";
+import { letra } from "../services/api.js";
 
 const props = defineProps({
   questao: { type: Object, required: true },
@@ -23,6 +25,16 @@ const avisoJaRespondida = computed(() => {
   const data = h.ultima ? `, a última em ${new Date(h.ultima).toLocaleDateString("pt-BR")}` : "";
   return `Você já respondeu esta questão ${vezes} (${acertos})${data}.`;
 });
+
+/** Depois de responder: a correta fica verde e a escolhida errada, vermelha. */
+function classesDaAlternativa(i) {
+  const valor = letra(i);
+  return {
+    escolhida: props.respostaDada === valor,
+    correta: props.bloqueada && valor === props.questao.gabarito,
+    incorreta: props.bloqueada && props.respostaDada === valor && valor !== props.questao.gabarito,
+  };
+}
 </script>
 
 <template>
@@ -47,7 +59,23 @@ const avisoJaRespondida = computed(() => {
 
     <p class="enunciado">{{ questao.enunciado }}</p>
 
-    <div class="opcoes">
+    <ol v-if="questao.alternativas?.length" class="alternativas">
+      <li v-for="(texto, i) in questao.alternativas" :key="i">
+        <button
+          type="button"
+          class="alternativa"
+          :class="classesDaAlternativa(i)"
+          :disabled="bloqueada"
+          :aria-label="`Alternativa ${letra(i)}: ${texto}`"
+          @click="emit('responder', letra(i))"
+        >
+          <span class="letra">{{ letra(i) }}</span>
+          <span class="texto">{{ texto }}</span>
+        </button>
+      </li>
+    </ol>
+
+    <div v-else class="opcoes">
       <button
         type="button"
         class="opcao certo"
