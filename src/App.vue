@@ -1,13 +1,14 @@
 <script setup>
 // Componente raiz: liga o estado (composable) aos componentes de tela.
-import { computed, onMounted, onUnmounted } from "vue";
-import { useQuestionario } from "./composables/useQuestionario.js";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { MAXIMO_NO_CADERNO, useQuestionario } from "./composables/useQuestionario.js";
 import { letra } from "./services/api.js";
 import EscolhaConcurso from "./components/EscolhaConcurso.vue";
 import EscolhaDisciplina from "./components/EscolhaDisciplina.vue";
 import PlacarSessao from "./components/PlacarSessao.vue";
 import QuestaoItem from "./components/QuestaoItem.vue";
 import CriticaQuestao from "./components/CriticaQuestao.vue";
+import CadernoImpressao from "./components/CadernoImpressao.vue";
 
 const {
   etapa,
@@ -15,6 +16,11 @@ const {
   concursos,
   concurso,
   podeTrocarConcurso,
+  totalSimulado,
+  caderno,
+  topicos,
+  topicosPorId,
+  rotuloDe,
   todasQuestoes,
   questoes,
   indiceAtual,
@@ -39,7 +45,13 @@ const {
   trocarDisciplina,
   trocarConcurso,
   apagarHistorico,
+  abrirImpressao,
+  sortearCaderno,
 } = useQuestionario();
+
+// Tela inicial do concurso: "responder" na tela ou "imprimir" um caderno.
+// Fica aqui para não voltar a "responder" a cada caderno impresso.
+const modoEscolha = ref("responder");
 
 // O placar só faz sentido durante uma sessão (e no resultado final).
 const emSessao = computed(() =>
@@ -78,7 +90,7 @@ onUnmounted(() => {
 
 <template>
   <main class="pagina">
-    <header class="cabecalho">
+    <header class="cabecalho" :class="{ 'nao-imprimir': etapa === 'imprimindo' }">
       <div>
         <h1>Questões</h1>
         <p v-if="concurso && etapa !== 'escolhendo-concurso'" class="detalhe nome-concurso">
@@ -125,9 +137,24 @@ onUnmounted(() => {
       :grupos="opcoesDeEstudo"
       :total-geral="todasQuestoes.length"
       :total-respondidas="totalRespondidas"
+      :total-simulado="totalSimulado"
+      v-model:modo="modoEscolha"
       @escolher="iniciar"
+      @imprimir="abrirImpressao"
       @apagar-historico="apagarHistorico"
       @trocar-concurso="trocarConcurso"
+    />
+
+    <CadernoImpressao
+      v-else-if="etapa === 'imprimindo' && caderno"
+      :concurso="concurso"
+      :caderno="caderno"
+      :topicos="topicos"
+      :topicos-por-id="topicosPorId"
+      :rotulo="rotuloDe(caderno.idTopico)"
+      :maximo="MAXIMO_NO_CADERNO"
+      @sortear="sortearCaderno"
+      @voltar="trocarDisciplina"
     />
 
     <section v-else-if="etapa === 'vazio'" class="aviso">

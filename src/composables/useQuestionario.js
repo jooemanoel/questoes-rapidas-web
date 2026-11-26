@@ -11,8 +11,20 @@ import {
   limparHistorico,
   migrarDadosAntigos,
 } from "../services/historico.js";
+import {
+  montarSimulado,
+  pertenceAo,
+  priorizarNaoRespondidas,
+  totalDoSimulado,
+} from "../services/selecao.js";
 
 const CHAVE_CONCURSO = "concurso-atual";
+
+/** Filtro especial: o simulado com a composição da prova (concurso.distribuicao). */
+export const ID_SIMULADO = "simulado";
+
+/** Limite do caderno impresso (100 questões de múltipla escolha dão umas 30 páginas). */
+export const MAXIMO_NO_CADERNO = 100;
 
 /**
  * A tela está sempre em UMA destas etapas:
@@ -24,6 +36,7 @@ const CHAVE_CONCURSO = "concurso-atual";
  *   "respondendo"          -> questão na tela, aguardando a resposta
  *   "corrigida"            -> resposta dada, crítica visível
  *   "fim"                  -> todas as questões da sessão respondidas
+ *   "imprimindo"           -> prévia do caderno para imprimir ou salvar em PDF
  */
 export function useQuestionario() {
   // ---------- Estado ----------
@@ -35,7 +48,7 @@ export function useQuestionario() {
 
   const todasQuestoes = ref([]); // todas as questões do concurso
   const questoes = ref([]); // só as da disciplina escolhida, embaralhadas
-  const filtroAtual = ref(null); // id do tópico escolhido (null = todas)
+  const filtroAtual = ref(null); // id do tópico escolhido (null = todas, ID_SIMULADO = simulado)
 
   const indiceAtual = ref(0);
   const respostaDada = ref(null); // "C"/"E", uma letra da alternativa ou null
@@ -61,6 +74,10 @@ export function useQuestionario() {
   // depois de o usuário trocar de concurso é ignorada.
   let carregamentoAtual = 0;
 
+  // Caderno para imprimir:
+  // { idTopico, simulado, quantidade, disponiveis, questoes, faltas, geradoEm } ou null
+  const caderno = ref(null);
+
   // ---------- Valores derivados (computed) ----------
   const questaoAtual = computed(() => questoes.value[indiceAtual.value]);
 
@@ -73,6 +90,9 @@ export function useQuestionario() {
   );
 
   const podeTrocarConcurso = computed(() => concursos.value.length > 1);
+
+  /** Questões do simulado da prova (0 = o concurso não tem a distribuição cadastrada). */
+  const totalSimulado = computed(() => totalDoSimulado(concurso.value?.distribuicao));
 
   /** Quantas das questões existentes já foram respondidas ao menos uma vez. */
   const totalRespondidas = computed(
@@ -101,11 +121,7 @@ export function useQuestionario() {
   });
 
   /** Nome do filtro em uso, exibido durante a sessão. */
-  const rotuloFiltro = computed(() => {
-    if (!filtroAtual.value) return "Todas as disciplinas";
-    const topico = topicosPorId.value.get(filtroAtual.value);
-    return topico ? `${topico.id} ${topico.titulo}` : filtroAtual.value;
-  });
+  const rotuloFiltro = computed(() => rotuloDe(filtroAtual.value));
 
   /** Disciplina (nível 2) e tópico da questão atual, para dar contexto. */
   const topicoAtual = computed(() => {
@@ -178,13 +194,16 @@ export function useQuestionario() {
     }
   }
 
-  /** Inicia uma sessão com as questões do tópico escolhido (null = todas). */
+  /** Inicia uma sessão com as questões do tópico escolhido (null = todas, ID_SIMULADO = simulado). */
   function iniciar(idTopico) {
     filtroAtual.value = idTopico;
-    questoes.value = priorizarNaoRespondidas(
-      todasQuestoes.value.filter((q) => pertenceAo(q, idTopico)),
-      historico.value
-    );
+    questoes.value =
+      idTopico === ID_SIMULADO
+        ? montarSimulado(todasQuestoes.value, concurso.value.distribuicao, historico.value).questoes
+        : priorizarNaoRespondidas(
+            todasQuestoes.value.filter((q) => pertenceAo(q, idTopico)),
+            historico.value
+          );
     respondidasNaSessao.value = questoes.value.filter((q) => historico.value[q.id]).length;
     reiniciarPlacar();
     lembrarHistoricoDaQuestao();
@@ -220,6 +239,48 @@ export function useQuestionario() {
     respostaDada.value = null;
     lembrarHistoricoDaQuestao();
     etapa.value = "respondendo";
+  }
+
+  /**
+   * Abre a prévia do caderno para imprimir com as questões do tópico (null = todas)
+   * ou com um simulado (ID_SIMULADO). Responder no papel não entra no histórico.
+   */
+  function abrirImpressao(idTopico) {
+    const simulado = idTopico === ID_SIMULADO;
+    const disponiveis = simulado ? totalSimulado.value : contarQuestoes(idTopico);
+    caderno.value = { idTopico, simulado, disponiveis, quantidade: 0, questoes: [], faltas: [] };
+    sortearCaderno(Math.min(disponiveis, 20, MAXIMO_NO_CADERNO));
+    etapa.value = "imprimindo";
+  }
+
+  /** Sorteia (de novo) as questões do caderno aberto; no simulado, a quantidade é a da prova. */
+  function sortearCaderno(quantidade) {
+    const atual = caderno.value;
+    if (!atual) return;
+
+    let selecionadas;
+    let faltas = [];
+    if (atual.simulado) {
+      ({ questoes: selecionadas, faltas } = montarSimulado(
+        todasQuestoes.value,
+        concurso.value.distribuicao,
+        historico.value
+      ));
+    } else {
+      const limite = Math.max(1, Math.min(quantidade, atual.disponiveis, MAXIMO_NO_CADERNO));
+      selecionadas = priorizarNaoRespondidas(
+        todasQuestoes.value.filter((q) => pertenceAo(q, atual.idTopico)),
+        historico.value
+      ).slice(0, limite);
+    }
+
+    caderno.value = {
+      ...atual,
+      quantidade: selecionadas.length,
+      questoes: selecionadas,
+      faltas,
+      geradoEm: new Date(),
+    };
   }
 
   /** Repete a mesma disciplina, em nova ordem. */
@@ -261,11 +322,12 @@ export function useQuestionario() {
 
   // ---------- Funções auxiliares ----------
 
-  /** A questão pertence ao tópico se o topicoId é ele ou um descendente (ex.: "3.2" inclui "3.2.1.4"). */
-  function pertenceAo(questao, idTopico) {
-    if (!idTopico) return true;
-    const id = questao.topicoId || "";
-    return id === idTopico || id.startsWith(`${idTopico}.`);
+  /** Nome de um filtro: "Todas as disciplinas", "Simulado da prova" ou "2.3 Título". */
+  function rotuloDe(idTopico) {
+    if (!idTopico) return "Todas as disciplinas";
+    if (idTopico === ID_SIMULADO) return `Simulado da prova (${totalSimulado.value} questões)`;
+    const topico = topicosPorId.value.get(idTopico);
+    return topico ? `${topico.id} ${topico.titulo}` : idTopico;
   }
 
   function contarQuestoes(idTopico) {
@@ -279,6 +341,11 @@ export function useQuestionario() {
     concursos,
     concurso,
     podeTrocarConcurso,
+    totalSimulado,
+    caderno,
+    topicos,
+    topicosPorId,
+    rotuloDe,
     todasQuestoes,
     questoes,
     indiceAtual,
@@ -303,25 +370,8 @@ export function useQuestionario() {
     trocarDisciplina,
     trocarConcurso,
     apagarHistorico,
+    abrirImpressao,
+    sortearCaderno,
   };
 }
 
-/**
- * Ordena a sessão: primeiro as questões nunca respondidas (em ordem aleatória),
- * depois as já respondidas, das que foram vistas menos vezes para as mais vistas.
- * Empates ficam em ordem aleatória (embaralha antes; o sort do JS é estável).
- */
-function priorizarNaoRespondidas(lista, historico) {
-  const vezes = (q) => historico[q.id]?.vezes ?? 0;
-  return embaralhar(lista).sort((a, b) => vezes(a) - vezes(b));
-}
-
-/** Embaralhamento de Fisher-Yates: devolve uma cópia em ordem aleatória. */
-function embaralhar(lista) {
-  const copia = [...lista];
-  for (let i = copia.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copia[i], copia[j]] = [copia[j], copia[i]];
-  }
-  return copia;
-}
